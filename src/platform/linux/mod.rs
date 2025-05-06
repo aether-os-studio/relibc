@@ -215,7 +215,7 @@ impl Pal for Sys {
     }
 
     unsafe fn fork() -> Result<pid_t> {
-        Ok(e_raw(unsafe { syscall!(CLONE, SIGCHLD, 0, 0, 0, 0) })? as pid_t)
+        Ok(e_raw(unsafe { syscall!(FORK) })? as pid_t)
     }
 
     fn fpath(fildes: c_int, out: &mut [u8]) -> Result<usize> {
@@ -488,7 +488,7 @@ impl Pal for Sys {
     }
 
     fn open(path: CStr, oflag: c_int, mode: mode_t) -> Result<c_int> {
-        e_raw(unsafe { syscall!(OPENAT, AT_FDCWD, path.as_ptr(), oflag, mode) })
+        e_raw(unsafe { syscall!(OPEN, path.as_ptr(), oflag, mode) })
             .map(|fd| fd as c_int)
     }
 

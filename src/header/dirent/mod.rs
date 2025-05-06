@@ -18,7 +18,7 @@ use crate::{
 
 use super::errno::{EINVAL, EIO, ENOMEM};
 
-const INITIAL_BUFSIZE: usize = 512;
+const INITIAL_BUFSIZE: usize = 16384;
 
 /// See <https://pubs.opengroup.org/onlinepubs/9799919799/basedefs/dirent.h.html>.
 // No repr(C) needed, as this is a completely opaque struct. Being accessed as a pointer, in C it's

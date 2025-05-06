@@ -99,105 +99,110 @@ pub unsafe extern "C" fn memcpy(s1: *mut c_void, s2: *const c_void, n: size_t) -
     // expectations of Rust's core library, as well as C2y (N3322).
     // See https://doc.rust-lang.org/core/index.html for details.
     if n != 0 {
-        // SAFETY: the caller is required to ensure that the provided pointers
-        // are valid. The slices are required to have a length of at most
-        // isize::MAX; this implicitly ensured by requiring valid pointers to
-        // two nonoverlapping slices.
-        let s1_slice = unsafe { slice::from_raw_parts_mut(s1.cast::<MaybeUninit<u8>>(), n) };
-        let s2_slice = unsafe { slice::from_raw_parts(s2.cast::<MaybeUninit<u8>>(), n) };
+        // // SAFETY: the caller is required to ensure that the provided pointers
+        // // are valid. The slices are required to have a length of at most
+        // // isize::MAX; this implicitly ensured by requiring valid pointers to
+        // // two nonoverlapping slices.
+        // let s1_slice = unsafe { slice::from_raw_parts_mut(s1.cast::<MaybeUninit<u8>>(), n) };
+        // let s2_slice = unsafe { slice::from_raw_parts(s2.cast::<MaybeUninit<u8>>(), n) };
 
-        // At this point, it may seem tempting to use
-        // s1_slice.copy_from_slice(s2_slice) here, but memcpy is one of the
-        // handful of symbols whose existence is assumed by Rust's core
-        // library, and thus we need to be careful here not to rely on any
-        // function that calls memcpy internally.
-        // See https://doc.rust-lang.org/core/index.html for details.
-        //
-        // Instead, we check the alignment of the two slices and try to
-        // identify the largest Rust primitive type that is well-aligned for
-        // copying in chunks. s1_slice and s2_slice will be divided into
-        // (prefix, middle, suffix), where only the "middle" part is copyable
-        // using the larger primitive type.
-        let s1_addr = s1.addr();
-        let s2_addr = s2.addr();
-        // Find the number of similar trailing bits in the two addresses to let
-        // us find the largest possible chunk size
-        let equal_trailing_bits_count = (s1_addr ^ s2_addr).trailing_zeros();
-        let chunk_size = match equal_trailing_bits_count {
-            0 => 1,
-            1 => 2,
-            2 => 4,
-            3 => 8,
-            _ => 16, // use u128 chunks for any higher alignments
-        };
-        let chunk_align_offset = s1.align_offset(chunk_size);
-        let prefix_len = chunk_align_offset.min(n);
+        // // At this point, it may seem tempting to use
+        // // s1_slice.copy_from_slice(s2_slice) here, but memcpy is one of the
+        // // handful of symbols whose existence is assumed by Rust's core
+        // // library, and thus we need to be careful here not to rely on any
+        // // function that calls memcpy internally.
+        // // See https://doc.rust-lang.org/core/index.html for details.
+        // //
+        // // Instead, we check the alignment of the two slices and try to
+        // // identify the largest Rust primitive type that is well-aligned for
+        // // copying in chunks. s1_slice and s2_slice will be divided into
+        // // (prefix, middle, suffix), where only the "middle" part is copyable
+        // // using the larger primitive type.
+        // let s1_addr = s1.addr();
+        // let s2_addr = s2.addr();
+        // // Find the number of similar trailing bits in the two addresses to let
+        // // us find the largest possible chunk size
+        // let equal_trailing_bits_count = (s1_addr ^ s2_addr).trailing_zeros();
+        // let chunk_size = match equal_trailing_bits_count {
+        //     0 => 1,
+        //     1 => 2,
+        //     2 => 4,
+        //     3 => 8,
+        //     _ => 16, // use u128 chunks for any higher alignments
+        // };
+        // let chunk_align_offset = s1.align_offset(chunk_size);
+        // let prefix_len = chunk_align_offset.min(n);
 
-        // Copy "prefix" bytes
-        for (s1_elem, s2_elem) in zip(&mut s1_slice[..prefix_len], &s2_slice[..prefix_len]) {
-            *s1_elem = *s2_elem;
-        }
+        // // Copy "prefix" bytes
+        // for (s1_elem, s2_elem) in zip(&mut s1_slice[..prefix_len], &s2_slice[..prefix_len]) {
+        //     *s1_elem = *s2_elem;
+        // }
 
-        if chunk_align_offset < n {
-            fn copy_chunks_and_remainder<const N: usize, T: Copy>(
-                dst: &mut [MaybeUninit<u8>],
-                src: &[MaybeUninit<u8>],
-            ) {
-                // Check sanity
-                assert_eq!(N, mem::size_of::<T>());
-                assert_eq!(0, N % mem::align_of::<T>());
-                assert!(dst.as_mut_ptr().is_aligned_to(N));
-                assert!(src.as_ptr().is_aligned_to(N));
+        // if chunk_align_offset < n {
+        //     fn copy_chunks_and_remainder<const N: usize, T: Copy>(
+        //         dst: &mut [MaybeUninit<u8>],
+        //         src: &[MaybeUninit<u8>],
+        //     ) {
+        //         // Check sanity
+        //         assert_eq!(N, mem::size_of::<T>());
+        //         assert_eq!(0, N % mem::align_of::<T>());
+        //         assert!(dst.as_mut_ptr().is_aligned_to(N));
+        //         assert!(src.as_ptr().is_aligned_to(N));
 
-                // Split into "middle" and "suffix"
-                let (dst_chunks, dst_remainder) = dst.as_chunks_mut::<N>();
-                let (src_chunks, src_remainder) = src.as_chunks::<N>();
+        //         // Split into "middle" and "suffix"
+        //         let (dst_chunks, dst_remainder) = dst.as_chunks_mut::<N>();
+        //         let (src_chunks, src_remainder) = src.as_chunks::<N>();
 
-                // Copy "middle"
-                for (dst_chunk, src_chunk) in zip(dst_chunks, src_chunks) {
-                    // SAFETY: the chunks are safely subsliced from s1 and
-                    // s2. Alignment is ensured through the use of
-                    // "align_offset", while the size of the chunks is
-                    // explicitly taken to match the primitive size.
-                    let dst_chunk_primitive: &mut MaybeUninit<T> =
-                        unsafe { &mut *dst_chunk.as_mut_ptr().cast() };
-                    let src_chunk_primitive: &MaybeUninit<T> =
-                        unsafe { &*src_chunk.as_ptr().cast() };
-                    *dst_chunk_primitive = *src_chunk_primitive;
-                }
+        //         // Copy "middle"
+        //         for (dst_chunk, src_chunk) in zip(dst_chunks, src_chunks) {
+        //             // SAFETY: the chunks are safely subsliced from s1 and
+        //             // s2. Alignment is ensured through the use of
+        //             // "align_offset", while the size of the chunks is
+        //             // explicitly taken to match the primitive size.
+        //             let dst_chunk_primitive: &mut MaybeUninit<T> =
+        //                 unsafe { &mut *dst_chunk.as_mut_ptr().cast() };
+        //             let src_chunk_primitive: &MaybeUninit<T> =
+        //                 unsafe { &*src_chunk.as_ptr().cast() };
+        //             *dst_chunk_primitive = *src_chunk_primitive;
+        //         }
 
-                // Copy "suffix"
-                for (dst_elem, src_elem) in zip(dst_remainder, src_remainder) {
-                    *dst_elem = *src_elem;
-                }
-            }
+        //         // Copy "suffix"
+        //         for (dst_elem, src_elem) in zip(dst_remainder, src_remainder) {
+        //             *dst_elem = *src_elem;
+        //         }
+        //     }
 
-            // Copy "middle" bytes (if length is sufficient) and any remaining
-            // "suffix" bytes.
-            let s1_middle_and_suffix = &mut s1_slice[prefix_len..];
-            let s2_middle_and_suffix = &s2_slice[prefix_len..];
-            match chunk_size {
-                1 => {
-                    for (s1_elem, s2_elem) in zip(s1_middle_and_suffix, s2_middle_and_suffix) {
-                        *s1_elem = *s2_elem;
-                    }
-                }
-                2 => {
-                    copy_chunks_and_remainder::<2, u16>(s1_middle_and_suffix, s2_middle_and_suffix)
-                }
-                4 => {
-                    copy_chunks_and_remainder::<4, u32>(s1_middle_and_suffix, s2_middle_and_suffix)
-                }
-                8 => {
-                    copy_chunks_and_remainder::<8, u64>(s1_middle_and_suffix, s2_middle_and_suffix)
-                }
-                16 => copy_chunks_and_remainder::<16, u128>(
-                    s1_middle_and_suffix,
-                    s2_middle_and_suffix,
-                ),
-                _ => unreachable!(),
-            }
-        }
+        //     // Copy "middle" bytes (if length is sufficient) and any remaining
+        //     // "suffix" bytes.
+        //     let s1_middle_and_suffix = &mut s1_slice[prefix_len..];
+        //     let s2_middle_and_suffix = &s2_slice[prefix_len..];
+        //     match chunk_size {
+        //         1 => {
+        //             for (s1_elem, s2_elem) in zip(s1_middle_and_suffix, s2_middle_and_suffix) {
+        //                 *s1_elem = *s2_elem;
+        //             }
+        //         }
+        //         2 => {
+        //             copy_chunks_and_remainder::<2, u16>(s1_middle_and_suffix, s2_middle_and_suffix)
+        //         }
+        //         4 => {
+        //             copy_chunks_and_remainder::<4, u32>(s1_middle_and_suffix, s2_middle_and_suffix)
+        //         }
+        //         8 => {
+        //             copy_chunks_and_remainder::<8, u64>(s1_middle_and_suffix, s2_middle_and_suffix)
+        //         }
+        //         16 => copy_chunks_and_remainder::<16, u128>(
+        //             s1_middle_and_suffix,
+        //             s2_middle_and_suffix,
+        //         ),
+        //         _ => unreachable!(),
+        //     }
+        // }
+
+        (0..n).for_each(|i| unsafe {
+            *(s1 as *mut MaybeUninit<u8>).offset(i as isize) =
+                *(s2 as *const MaybeUninit<u8>).offset(i as isize)
+        });
     }
 
     s1
@@ -379,7 +384,7 @@ pub unsafe extern "C" fn strchrnul(s: *const c_char, c: c_int) -> *mut c_char {
 /// See <https://pubs.opengroup.org/onlinepubs/9799919799/functions/strcmp.html>.
 #[no_mangle]
 pub unsafe extern "C" fn strcmp(s1: *const c_char, s2: *const c_char) -> c_int {
-    strncmp(s1, s2, usize::MAX)
+    strncmp(s1, s2, isize::MAX as usize - 1)
 }
 
 /// See <https://pubs.opengroup.org/onlinepubs/9799919799/functions/strcoll.html>.
